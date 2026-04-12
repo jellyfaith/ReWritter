@@ -52,6 +52,7 @@ body {
     radial-gradient(circle at 8% 16%, rgba(0, 180, 216, 0.2), transparent 36%),
     radial-gradient(circle at 92% 10%, rgba(58, 134, 255, 0.18), transparent 34%),
     linear-gradient(150deg, #0b1021 0%, #12172b 44%, #161c34 100%);
+  background-attachment: fixed;
   transition: background 220ms ease, color 220ms ease;
 }
 
@@ -60,10 +61,35 @@ body[data-theme="light"] {
     radial-gradient(circle at 10% 14%, rgba(85, 151, 255, 0.14), transparent 32%),
     radial-gradient(circle at 94% 8%, rgba(66, 192, 181, 0.1), transparent 30%),
     linear-gradient(155deg, #e9eef6 0%, #e5ebf3 46%, #edf2f8 100%);
+  background-attachment: fixed;
 }
 
 #root {
   min-height: 100vh;
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(220 18% 46% / 0.78) transparent;
+}
+
+html::-webkit-scrollbar {
+  width: 9px;
+}
+
+html::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background-color: hsl(220 18% 48% / 0.72);
+}
+
+html::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(220 18% 58% / 0.88);
 }
 
 .panel {
@@ -71,6 +97,51 @@ body[data-theme="light"] {
   background: hsl(var(--card) / 0.88);
   backdrop-filter: blur(6px);
   box-shadow: var(--panel-shadow);
+}
+
+.header-panel {
+  background: hsl(var(--card) / 0.96);
+  border-color: hsl(var(--border) / 0.92);
+}
+
+.top-viewport-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 22px;
+  z-index: 35;
+  pointer-events: none;
+  background: hsl(var(--background));
+}
+
+.top-header-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 132px;
+  z-index: 34;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    hsl(var(--background)) 0%,
+    hsl(var(--background) / 0.97) 42%,
+    hsl(var(--background) / 0.72) 72%,
+    hsl(var(--background) / 0) 100%
+  );
+}
+
+html[data-theme="light"] {
+  scrollbar-color: hsl(214 18% 58% / 0.86) transparent;
+}
+
+html[data-theme="light"]::-webkit-scrollbar-thumb {
+  background-color: hsl(214 18% 62% / 0.75);
+}
+
+html[data-theme="light"]::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(214 18% 52% / 0.88);
 }
 
 .hero-gradient {
@@ -136,3 +207,226 @@ body[data-theme="light"] .bg-cyan-300\/15,
 body[data-theme="light"] .bg-cyan-400\/10 {
   background-color: hsl(198 65% 44% / 0.14) !important;
 }
+
+.login-stage {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+
+  /* 背景候选色切换区（修改这里最方便）
+     方案 A 晨光宣纸（当前启用）
+     --login-bg-a1: #f6f0e4;
+     --login-bg-a2: #eef2ff;
+     --login-bg-a3: #f5e7d5;
+
+     方案 B 春水薄雾
+     --login-bg-a1: #edf6f9;
+     --login-bg-a2: #e8eefc;
+     --login-bg-a3: #f8eadf;
+
+     方案 C 晴空暖沙
+     --login-bg-a1: #fff3e2;
+     --login-bg-a2: #e8f0ff;
+     --login-bg-a3: #ffe5cf;
+
+     方案 D 青瓷淡金
+     --login-bg-a1: #ecf5ef;
+     --login-bg-a2: #edf1fb;
+     --login-bg-a3: #f8ecd7;
+
+      深色方案 E 玄夜群青
+      --login-bg-a1: #141a2b;
+      --login-bg-a2: #1b2742;
+      --login-bg-a3: #202a3a;
+
+      深色方案 F 墨蓝星海
+      --login-bg-a1: #0f1626;
+      --login-bg-a2: #1b2340;
+      --login-bg-a3: #2a2338;
+
+      深色方案 G 松烟乌金
+      --login-bg-a1: #171514;
+      --login-bg-a2: #232126;
+      --login-bg-a3: #3a2d1f;
+
+      深色方案 H 雨夜青石
+      --login-bg-a1: #132026;
+      --login-bg-a2: #1f2f37;
+      --login-bg-a3: #2f3d46;
+  */
+  --login-bg-a1: #141a2b;
+      --login-bg-a2: #1b2742;
+      --login-bg-a3: #202a3a;
+
+  background:
+    radial-gradient(circle at 12% 18%, rgba(219, 183, 126, 0.28), transparent 44%),
+    radial-gradient(circle at 84% 16%, rgba(139, 165, 220, 0.26), transparent 40%),
+    linear-gradient(132deg, var(--login-bg-a1) 0%, var(--login-bg-a2) 46%, var(--login-bg-a3) 100%);
+  color: #4a3a28;
+}
+
+.ink-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.poetry-noise {
+  position: absolute;
+  inset: -20%;
+  z-index: 0;
+  background-image:
+    radial-gradient(rgba(171, 142, 102, 0.08) 1px, transparent 1px),
+    radial-gradient(rgba(111, 136, 187, 0.06) 1px, transparent 1px);
+  background-size: 3px 3px, 4px 4px;
+  background-position: 0 0, 2px 2px;
+  filter: blur(0.6px);
+  opacity: 0.64;
+}
+
+.login-shell {
+  position: relative;
+  z-index: 3;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+}
+
+.login-brand {
+  text-align: center;
+  margin-bottom: 1.4rem;
+  padding: 0.85rem 1.2rem;
+}
+
+.brand-icon {
+  display: inline-flex;
+  width: 56px;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  color: #dce7ff;
+  background: linear-gradient(130deg, #3f98ff 0%, #5072d8 100%);
+  box-shadow: 0 16px 34px -16px rgba(74, 122, 218, 0.75);
+}
+
+.login-brand h1 {
+  margin: 0.9rem 0 0;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(2.4rem, 3.6vw, 3.4rem);
+  color: #ffffff;
+  text-shadow: 0 6px 24px rgba(15, 24, 46, 0.46);
+}
+
+.login-brand p {
+  margin: 0.55rem 0 0;
+  font-size: clamp(1.05rem, 1.2vw, 1.28rem);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.login-card {
+  width: min(92vw, 420px);
+  border-radius: 20px;
+  border: 1px solid rgba(246, 233, 205, 0.24);
+  background: rgba(10, 13, 20, 0.82);
+  backdrop-filter: blur(7px);
+  box-shadow: 0 30px 58px -34px rgba(0, 0, 0, 0.9);
+  padding: 1.35rem 1.2rem 1.1rem;
+}
+
+.login-field {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0.95rem;
+  font-size: 0.92rem;
+  color: #f0dfba;
+}
+
+.input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid rgba(255, 238, 199, 0.16);
+  border-radius: 12px;
+  padding: 0.72rem 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.input-wrap input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: #f7f2e7;
+  font-size: 0.94rem;
+}
+
+.input-wrap input::placeholder {
+  color: rgba(226, 228, 236, 0.45);
+}
+
+.remember-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  font-size: 0.92rem;
+  color: rgba(229, 234, 248, 0.86);
+}
+
+.remember-row input {
+  accent-color: #4b88ff;
+}
+
+.login-error {
+  margin: 0.75rem 0 0;
+  color: #ff8f95;
+  font-size: 0.88rem;
+}
+
+.login-submit {
+  margin-top: 1rem;
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 0.72rem 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f6fbff;
+  background: linear-gradient(105deg, #3d8cf5 0%, #5a6add 100%);
+  cursor: pointer;
+  transition: transform 140ms ease, filter 140ms ease;
+}
+
+.login-submit:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.login-submit:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.login-tip {
+  margin: 0.9rem 0 0;
+  text-align: center;
+  font-size: 0.86rem;
+  color: rgba(238, 238, 241, 0.62);
+}
+
+.login-footer {
+  margin-top: 1.4rem;
+  text-align: center;
+  max-width: min(92vw, 460px);
+}
+
+.login-footer p {
+  margin: 0.42rem 0;
+  font-size: 0.82rem;
+  color: rgba(228, 230, 239, 0.64);
+  line-height: 1.6;
+}
+
