@@ -24,10 +24,18 @@ import {
 } from "lucide-react";
 
 import type { LayoutOutletContext } from "../Layout";
+import {
+  listVendorConfigs,
+  testDeepSeekVendor,
+  testEmbeddingVendor,
+  updateVendorConfig,
+  type VendorConfig,
+} from "../lib/vendor";
 
 type ConfigSectionId =
   | "config-validation"
   | "vendor-management"
+  | "embedding-vendor-management"
   | "model-catalog"
   | "llm-config"
   | "datasource-config"
@@ -79,6 +87,18 @@ interface VendorInfo {
   status: VendorStatus;
 }
 
+interface EmbeddingVendorForm {
+  vendorId: string;
+  displayName: string;
+  apiBase: string;
+  model: string;
+  apiKey: string;
+  apiKeyMask: string;
+  keyConfigured: boolean;
+  source: "ui" | "env";
+  enabled: boolean;
+}
+
 const initialDeepSeekVendor: VendorInfo = {
   vendorId: "deepseek",
   displayName: "DeepSeek",
@@ -100,6 +120,18 @@ const initialDeepSeekVendor: VendorInfo = {
   status: "enabled"
 };
 
+const initialEmbeddingVendor: EmbeddingVendorForm = {
+  vendorId: "siliconflow",
+  displayName: "硅基流动",
+  apiBase: "https://api.siliconflow.cn/v1",
+  model: "BAAI/bge-m3",
+  apiKey: "",
+  apiKeyMask: "",
+  keyConfigured: false,
+  source: "env",
+  enabled: true,
+};
+
 function cloneVendor(vendor: VendorInfo): VendorInfo {
   return {
     ...vendor,
@@ -113,8 +145,12 @@ export default function SettingsConfig() {
   const [vendor, setVendor] = useState<VendorInfo | null>(initialDeepSeekVendor);
   const [isEditingVendor, setIsEditingVendor] = useState<boolean>(false);
   const [draftVendor, setDraftVendor] = useState<VendorInfo>(cloneVendor(initialDeepSeekVendor));
+  const [embeddingVendor, setEmbeddingVendor] = useState<EmbeddingVendorForm>(initialEmbeddingVendor);
+  const [testingEmbeddingVendor, setTestingEmbeddingVendor] = useState<boolean>(false);
+  const [savingEmbeddingVendor, setSavingEmbeddingVendor] = useState<boolean>(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [testingVendor, setTestingVendor] = useState<boolean>(false);
 
   const copy =
     locale === "zh"
@@ -181,6 +217,22 @@ export default function SettingsConfig() {
             securityDesc: "敏感密钥建议通过环境变量或运维配置注入，此处仅展示掩码。",
             pageHint: "仅支持 deepseek 厂家，后续可扩展多厂家。"
           },
+          embeddingSection: {
+            title: "Embedding 厂家管理",
+            desc: "前端填写优先，未填写则自动回退到 .env 中的硅基流动配置。",
+            vendorId: "厂家 ID",
+            displayName: "显示名称",
+            apiBase: "API 地址",
+            model: "Embedding 模型",
+            apiKey: "API Key",
+            keyHint: "留空表示使用 .env 中的 SILICONFLOW_API_KEY",
+            sourceUi: "来源：前端配置",
+            sourceEnv: "来源：.env",
+            save: "保存配置",
+            test: "测试连接",
+            testing: "测试中...",
+            saving: "保存中..."
+          },
           sections: [
             {
               id: "config-validation",
@@ -193,6 +245,12 @@ export default function SettingsConfig() {
               label: "厂家管理",
               hint: "配置模型厂商接入",
               icon: Building2
+            },
+            {
+              id: "embedding-vendor-management",
+              label: "Embedding 厂家",
+              hint: "管理向量化厂家密钥",
+              icon: Database
             },
             {
               id: "model-catalog",
@@ -314,6 +372,22 @@ export default function SettingsConfig() {
             securityDesc: "Sensitive keys should come from environment or ops config; masked only here.",
             pageHint: "Currently only deepseek is supported; multi-vendor can be added later."
           },
+          embeddingSection: {
+            title: "Embedding Vendor Management",
+            desc: "Frontend value has priority; fallback to .env SiliconFlow config if missing.",
+            vendorId: "Vendor ID",
+            displayName: "Display Name",
+            apiBase: "API Base",
+            model: "Embedding Model",
+            apiKey: "API Key",
+            keyHint: "Leave blank to fallback to SILICONFLOW_API_KEY in .env",
+            sourceUi: "Source: frontend config",
+            sourceEnv: "Source: .env",
+            save: "Save",
+            test: "Test",
+            testing: "Testing...",
+            saving: "Saving..."
+          },
           sections: [
             {
               id: "config-validation",
@@ -326,6 +400,12 @@ export default function SettingsConfig() {
               label: "Vendor Management",
               hint: "Configure provider integrations",
               icon: Building2
+            },
+            {
+              id: "embedding-vendor-management",
+              label: "Embedding Vendor",
+              hint: "Manage embedding keys",
+              icon: Database
             },
             {
               id: "model-catalog",
@@ -390,6 +470,51 @@ export default function SettingsConfig() {
     [activeSection, copy.sections]
   );
 
+  const hydrateVendorsFromConfig = (items: VendorConfig[]) => {
+    const chat = items.find((item) => item.capability === "chat");
+    const embedding = items.find((item) => item.capability === "embedding");
+
+    if (chat) {
+      const hydratedChat: VendorInfo = {
+        ...initialDeepSeekVendor,
+        vendorId: chat.vendor_id,
+        displayName: chat.display_name,
+        apiBase: chat.api_base,
+        keyConfigured: chat.key_configured,
+        apiKeyMask: chat.api_key_mask || "",
+        status: chat.enabled ? "enabled" : "disabled",
+      };
+      setVendor(hydratedChat);
+      setDraftVendor(cloneVendor(hydratedChat));
+    }
+
+    if (embedding) {
+      setEmbeddingVendor({
+        vendorId: embedding.vendor_id,
+        displayName: embedding.display_name,
+        apiBase: embedding.api_base,
+        model: embedding.model,
+        apiKey: "",
+        apiKeyMask: embedding.api_key_mask || "",
+        keyConfigured: embedding.key_configured,
+        source: embedding.source,
+        enabled: embedding.enabled,
+      });
+    }
+  };
+
+  useEffect(() => {
+    const loadConfigs = async () => {
+      try {
+        const configs = await listVendorConfigs();
+        hydrateVendorsFromConfig(configs);
+      } catch {
+        setToast({ tone: "warning", message: locale === "zh" ? "加载厂家配置失败，使用默认值" : "Failed to load vendor config" });
+      }
+    };
+    void loadConfigs();
+  }, [locale]);
+
   useEffect(() => {
     if (!toast) {
       return;
@@ -418,10 +543,35 @@ export default function SettingsConfig() {
     setIsEditingVendor(false);
   };
 
-  const saveVendorEditor = () => {
-    setVendor(cloneVendor(draftVendor));
-    setIsEditingVendor(false);
-    setToast({ tone: "success", message: locale === "zh" ? "厂家信息已更新" : "Vendor information updated" });
+  const saveVendorEditor = async () => {
+    try {
+      const saved = await updateVendorConfig("chat", {
+        capability: "chat",
+        vendor_id: draftVendor.vendorId,
+        display_name: draftVendor.displayName,
+        api_base: draftVendor.apiBase,
+        model: "deepseek-chat",
+        enabled: draftVendor.status === "enabled",
+        api_key: "",
+      });
+
+      const nextVendor = {
+        ...cloneVendor(draftVendor),
+        keyConfigured: saved.key_configured,
+        apiKeyMask: saved.api_key_mask || draftVendor.apiKeyMask,
+        status: saved.enabled ? "enabled" : "disabled",
+      } satisfies VendorInfo;
+
+      setVendor(nextVendor);
+      setDraftVendor(cloneVendor(nextVendor));
+      setIsEditingVendor(false);
+      setToast({ tone: "success", message: locale === "zh" ? "厂家信息已更新" : "Vendor information updated" });
+    } catch (error) {
+      setToast({
+        tone: "danger",
+        message: error instanceof Error ? error.message : locale === "zh" ? "保存厂家失败" : "Failed to save vendor",
+      });
+    }
   };
 
   const restoreVendor = () => {
@@ -486,33 +636,94 @@ export default function SettingsConfig() {
     setConfirmDialog({ action, ...textMap[action] });
   };
 
-  const runConfirmedAction = () => {
+  const runConfirmedAction = async () => {
     if (!confirmDialog || !vendor) {
       return;
     }
 
     if (confirmDialog.action === "test") {
-      setToast({
-        tone: vendor.keyConfigured ? "success" : "warning",
-        message:
+      setTestingVendor(true);
+      try {
+        const result = await testDeepSeekVendor({
+          model: "deepseek-chat",
+          enableThinking: false,
+        });
+
+        setVendor((prev) => {
+          if (!prev) {
+            return prev;
+          }
+          const updated = {
+            ...prev,
+            keyConfigured: result.configured,
+            apiBase: prev.apiBase,
+          };
+          setDraftVendor((draftPrev) => ({ ...draftPrev, keyConfigured: result.configured }));
+          return updated;
+        });
+
+        const latencyText = typeof result.latency_ms === "number" ? ` (${result.latency_ms}ms)` : "";
+        const message =
           locale === "zh"
-            ? vendor.keyConfigured
-              ? "连接测试通过"
-              : "连接测试失败：未配置 API Key"
-            : vendor.keyConfigured
-              ? "Connection test passed"
-              : "Connection test failed: API key missing"
-      });
+            ? `${result.ok ? "连接测试通过" : "连接测试失败"}${latencyText}：${result.message}`
+            : `${result.ok ? "Connection test passed" : "Connection test failed"}${latencyText}: ${result.message}`;
+
+        setToast({
+          tone: result.ok ? "success" : "warning",
+          message,
+        });
+      } catch (error) {
+        setToast({
+          tone: "danger",
+          message: error instanceof Error ? error.message : locale === "zh" ? "连接测试失败" : "Connection test failed",
+        });
+      } finally {
+        setTestingVendor(false);
+      }
     }
 
     if (confirmDialog.action === "enable") {
-      setVendor((prev) => (prev ? { ...prev, status: "enabled" } : prev));
-      setToast({ tone: "success", message: locale === "zh" ? "厂家已启用" : "Vendor enabled" });
+      try {
+        const target = vendor;
+        const saved = await updateVendorConfig("chat", {
+          capability: "chat",
+          vendor_id: target.vendorId,
+          display_name: target.displayName,
+          api_base: target.apiBase,
+          model: "deepseek-chat",
+          enabled: true,
+          api_key: "",
+        });
+        setVendor((prev) => (prev ? { ...prev, status: saved.enabled ? "enabled" : "disabled" } : prev));
+        setToast({ tone: "success", message: locale === "zh" ? "厂家已启用" : "Vendor enabled" });
+      } catch (error) {
+        setToast({
+          tone: "danger",
+          message: error instanceof Error ? error.message : locale === "zh" ? "启用失败" : "Enable failed",
+        });
+      }
     }
 
     if (confirmDialog.action === "disable") {
-      setVendor((prev) => (prev ? { ...prev, status: "disabled" } : prev));
-      setToast({ tone: "warning", message: locale === "zh" ? "厂家已禁用" : "Vendor disabled" });
+      try {
+        const target = vendor;
+        const saved = await updateVendorConfig("chat", {
+          capability: "chat",
+          vendor_id: target.vendorId,
+          display_name: target.displayName,
+          api_base: target.apiBase,
+          model: "deepseek-chat",
+          enabled: false,
+          api_key: "",
+        });
+        setVendor((prev) => (prev ? { ...prev, status: saved.enabled ? "enabled" : "disabled" } : prev));
+        setToast({ tone: "warning", message: locale === "zh" ? "厂家已禁用" : "Vendor disabled" });
+      } catch (error) {
+        setToast({
+          tone: "danger",
+          message: error instanceof Error ? error.message : locale === "zh" ? "禁用失败" : "Disable failed",
+        });
+      }
     }
 
     if (confirmDialog.action === "delete") {
@@ -522,6 +733,162 @@ export default function SettingsConfig() {
     }
 
     setConfirmDialog(null);
+  };
+
+  const saveEmbeddingVendorConfig = async () => {
+    setSavingEmbeddingVendor(true);
+    try {
+      const saved = await updateVendorConfig("embedding", {
+        capability: "embedding",
+        vendor_id: embeddingVendor.vendorId,
+        display_name: embeddingVendor.displayName,
+        api_base: embeddingVendor.apiBase,
+        model: embeddingVendor.model,
+        enabled: embeddingVendor.enabled,
+        api_key: embeddingVendor.apiKey.trim(),
+      });
+      setEmbeddingVendor((prev) => ({
+        ...prev,
+        keyConfigured: saved.key_configured,
+        apiKeyMask: saved.api_key_mask,
+        source: saved.source,
+        apiKey: "",
+      }));
+      setToast({ tone: "success", message: locale === "zh" ? "Embedding 厂家配置已保存" : "Embedding vendor saved" });
+    } catch (error) {
+      setToast({
+        tone: "danger",
+        message: error instanceof Error ? error.message : locale === "zh" ? "保存失败" : "Save failed",
+      });
+    } finally {
+      setSavingEmbeddingVendor(false);
+    }
+  };
+
+  const runEmbeddingVendorTest = async () => {
+    setTestingEmbeddingVendor(true);
+    try {
+      const result = await testEmbeddingVendor();
+      const latencyText = typeof result.latency_ms === "number" ? ` (${result.latency_ms}ms)` : "";
+      setToast({
+        tone: result.ok ? "success" : "warning",
+        message:
+          locale === "zh"
+            ? `${result.ok ? "连接测试通过" : "连接测试失败"}${latencyText}：${result.message}`
+            : `${result.ok ? "Connection test passed" : "Connection test failed"}${latencyText}: ${result.message}`,
+      });
+      const configs = await listVendorConfigs();
+      hydrateVendorsFromConfig(configs);
+    } catch (error) {
+      setToast({
+        tone: "danger",
+        message: error instanceof Error ? error.message : locale === "zh" ? "测试失败" : "Test failed",
+      });
+    } finally {
+      setTestingEmbeddingVendor(false);
+    }
+  };
+
+  const renderEmbeddingVendorManagement = () => {
+    return (
+      <div className="space-y-5">
+        <header>
+          <h4 className="text-xl font-semibold text-[hsl(var(--foreground))]">{copy.embeddingSection.title}</h4>
+          <p className="mt-1 text-sm text-slate-300">{copy.embeddingSection.desc}</p>
+        </header>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <label className="grid gap-2 text-sm font-medium text-slate-200">
+            {copy.embeddingSection.vendorId}
+            <input
+              value={embeddingVendor.vendorId}
+              onChange={(event) => setEmbeddingVendor((prev) => ({ ...prev, vendorId: event.target.value }))}
+              className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[hsl(var(--foreground))] outline-none ring-[hsl(var(--ring))] transition focus:ring-2"
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm font-medium text-slate-200">
+            {copy.embeddingSection.displayName}
+            <input
+              value={embeddingVendor.displayName}
+              onChange={(event) => setEmbeddingVendor((prev) => ({ ...prev, displayName: event.target.value }))}
+              className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[hsl(var(--foreground))] outline-none ring-[hsl(var(--ring))] transition focus:ring-2"
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm font-medium text-slate-200 lg:col-span-2">
+            {copy.embeddingSection.apiBase}
+            <input
+              value={embeddingVendor.apiBase}
+              onChange={(event) => setEmbeddingVendor((prev) => ({ ...prev, apiBase: event.target.value }))}
+              className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[hsl(var(--foreground))] outline-none ring-[hsl(var(--ring))] transition focus:ring-2"
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm font-medium text-slate-200">
+            {copy.embeddingSection.model}
+            <input
+              value={embeddingVendor.model}
+              onChange={(event) => setEmbeddingVendor((prev) => ({ ...prev, model: event.target.value }))}
+              className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[hsl(var(--foreground))] outline-none ring-[hsl(var(--ring))] transition focus:ring-2"
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm font-medium text-slate-200">
+            {copy.embeddingSection.apiKey}
+            <input
+              value={embeddingVendor.apiKey}
+              onChange={(event) => setEmbeddingVendor((prev) => ({ ...prev, apiKey: event.target.value }))}
+              placeholder={embeddingVendor.apiKeyMask || "sk-..."}
+              className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[hsl(var(--foreground))] outline-none ring-[hsl(var(--ring))] transition focus:ring-2"
+            />
+            <span className="text-xs text-slate-400">{copy.embeddingSection.keyHint}</span>
+          </label>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-md border border-cyan-400/30 bg-cyan-500/15 px-2 py-1 text-xs text-cyan-100">
+            {embeddingVendor.source === "ui" ? copy.embeddingSection.sourceUi : copy.embeddingSection.sourceEnv}
+          </span>
+          <span
+            className={[
+              "rounded-md border px-2 py-1 text-xs font-semibold",
+              embeddingVendor.keyConfigured
+                ? "border-emerald-400/35 bg-emerald-500/20 text-emerald-200"
+                : "border-rose-400/35 bg-rose-500/15 text-rose-200",
+            ].join(" ")}
+          >
+            {embeddingVendor.keyConfigured ? copy.vendorSection.configured : copy.vendorSection.missing}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              void saveEmbeddingVendorConfig();
+            }}
+            disabled={savingEmbeddingVendor}
+            className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-400 disabled:opacity-60"
+          >
+            <Pencil className="h-4 w-4" />
+            {savingEmbeddingVendor ? copy.embeddingSection.saving : copy.embeddingSection.save}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              void runEmbeddingVendorTest();
+            }}
+            disabled={testingEmbeddingVendor}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10 disabled:opacity-60"
+          >
+            <RefreshCw className={["h-4 w-4", testingEmbeddingVendor ? "animate-spin" : ""].join(" ")} />
+            {testingEmbeddingVendor ? copy.embeddingSection.testing : copy.embeddingSection.test}
+          </button>
+        </div>
+      </div>
+    );
   };
 
   const renderVendorManagement = () => {
@@ -740,16 +1107,24 @@ export default function SettingsConfig() {
                   }
                   return;
                 }
+                if (activeSection === "embedding-vendor-management") {
+                  void runEmbeddingVendorTest();
+                  return;
+                }
               }}
               className={[
                 "inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition",
-                activeSection === "vendor-management"
+                activeSection === "vendor-management" || activeSection === "embedding-vendor-management"
                   ? "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
                   : "bg-cyan-500 text-slate-950 hover:bg-cyan-400"
               ].join(" ")}
             >
               {activeSection === "vendor-management" ? <Pencil className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
-              {activeSection === "vendor-management" ? copy.vendorSection.editVendor : copy.validate}
+              {activeSection === "vendor-management"
+                ? copy.vendorSection.editVendor
+                : activeSection === "embedding-vendor-management"
+                  ? copy.embeddingSection.test
+                  : copy.validate}
             </button>
           </header>
 
@@ -821,6 +1196,8 @@ export default function SettingsConfig() {
             </div>
           ) : activeSection === "vendor-management" ? (
             renderVendorManagement()
+          ) : activeSection === "embedding-vendor-management" ? (
+            renderEmbeddingVendorManagement()
           ) : (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
               <h4 className="text-lg font-semibold text-[hsl(var(--foreground))]">{copy.placeholderTitle}</h4>
@@ -1046,9 +1423,12 @@ export default function SettingsConfig() {
 
             <button
               type="button"
-              onClick={runConfirmedAction}
+              onClick={() => {
+                void runConfirmedAction();
+              }}
+              disabled={testingVendor && confirmDialog.action === "test"}
               className={[
-                "inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold",
+                "inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60",
                 confirmDialog.action === "delete"
                   ? "bg-rose-500 text-rose-50 hover:bg-rose-400"
                   : confirmDialog.action === "disable"
@@ -1056,8 +1436,18 @@ export default function SettingsConfig() {
                     : "bg-cyan-500 text-slate-950 hover:bg-cyan-400"
               ].join(" ")}
             >
-              {confirmDialog.action === "delete" ? <Trash2 className="h-4 w-4" /> : <CircleCheck className="h-4 w-4" />}
-              {confirmDialog.confirmLabel}
+              {testingVendor && confirmDialog.action === "test" ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : confirmDialog.action === "delete" ? (
+                <Trash2 className="h-4 w-4" />
+              ) : (
+                <CircleCheck className="h-4 w-4" />
+              )}
+              {testingVendor && confirmDialog.action === "test"
+                ? locale === "zh"
+                  ? "测试中..."
+                  : "Testing..."
+                : confirmDialog.confirmLabel}
             </button>
           </footer>
         </div>

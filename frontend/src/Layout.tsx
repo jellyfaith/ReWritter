@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
+  Bot,
   CheckSquare,
   ChevronRight,
   ClipboardPenLine,
+  FolderKanban,
   Globe,
   ListTodo,
   LogOut,
@@ -18,7 +20,7 @@ import {
 import { clearAuth } from "./lib/auth";
 
 interface NavItem {
-  labelKey: "create" | "tasks" | "review" | "settings";
+  labelKey: "create" | "tasks" | "review" | "chat" | "materials" | "settings";
   to: string;
   icon: React.ComponentType<{ className?: string }>;
 }
@@ -34,6 +36,8 @@ const navItems: NavItem[] = [
   { labelKey: "create", to: "/create", icon: ClipboardPenLine },
   { labelKey: "tasks", to: "/tasks", icon: ListTodo },
   { labelKey: "review", to: "/review", icon: CheckSquare },
+  { labelKey: "chat", to: "/chat", icon: Bot },
+  { labelKey: "materials", to: "/materials", icon: FolderKanban },
   { labelKey: "settings", to: "/settings", icon: Settings }
 ];
 
@@ -45,6 +49,8 @@ const copyMap = {
       create: "创作中心",
       tasks: "任务大厅",
       review: "审核台",
+      chat: "聊天",
+      materials: "素材",
       settings: "设置"
     },
     profileName: "内容运营负责人",
@@ -70,6 +76,8 @@ const copyMap = {
       create: "Create",
       tasks: "Tasks",
       review: "Review",
+      chat: "Chat",
+      materials: "Materials",
       settings: "Settings"
     },
     profileName: "Content Operations Lead",
@@ -108,8 +116,14 @@ export default function Layout() {
     if (location.pathname.startsWith("/review")) {
       return copy.nav.review;
     }
+    if (location.pathname.startsWith("/chat")) {
+      return copy.nav.chat;
+    }
+    if (location.pathname.startsWith("/materials")) {
+      return copy.nav.materials;
+    }
     return copy.nav.create;
-  }, [copy.nav.create, copy.nav.review, copy.nav.settings, copy.nav.tasks, location.pathname]);
+  }, [copy.nav.chat, copy.nav.create, copy.nav.materials, copy.nav.review, copy.nav.settings, copy.nav.tasks, location.pathname]);
 
   useEffect(() => {
     // 将主题状态同步到 body，便于全局变量切换深浅模式。

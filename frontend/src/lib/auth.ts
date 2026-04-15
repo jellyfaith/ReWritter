@@ -1,7 +1,7 @@
 const TOKEN_KEY = "rewritter.auth.token";
 const EXPIRES_AT_KEY = "rewritter.auth.expires_at";
 const viteMeta = import.meta as ImportMeta & { env?: { VITE_API_BASE?: string } };
-const API_BASE = viteMeta.env?.VITE_API_BASE ?? "http://localhost:8001";
+export const API_BASE = viteMeta.env?.VITE_API_BASE ?? "http://localhost:8001";
 
 export interface LoginPayload {
   username: string;
