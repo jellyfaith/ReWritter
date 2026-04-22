@@ -69,3 +69,58 @@ def save_failed_attempt(client_id: str, max_fails: int, lock_seconds: int) -> No
         {"$set": payload, "$setOnInsert": {"created_at": now}},
         upsert=True,
     )
+
+
+def get_user_preferences(username: str) -> dict[str, Any] | None:
+    """获取用户偏好设置"""
+    user = users_col().find_one(
+        {"username": username},
+        {"preferences": 1}
+    )
+    if not user:
+        return None
+    return user.get("preferences")
+
+
+def update_user_preferences(username: str, preferences: dict[str, Any]) -> bool:
+    """更新用户偏好设置"""
+    now = time.time()
+    result = users_col().update_one(
+        {"username": username},
+        {
+            "$set": {
+                "preferences": preferences,
+                "preferences.updated_at": now,
+            },
+            "$setOnInsert": {
+                "preferences.created_at": now,
+            }
+        },
+        upsert=False  # 不创建新用户，只更新现有用户
+    )
+    return result.modified_count > 0
+
+
+def ensure_user_preferences(username: str) -> dict[str, Any]:
+    """确保用户有偏好设置，如果不存在则创建默认值"""
+    from app.schemas import UserPreferences
+
+    # 获取当前偏好
+    current = get_user_preferences(username)
+    if current:
+        return current
+
+    # 创建默认偏好
+    default_prefs = UserPreferences().dict()
+    now = time.time()
+    default_prefs["created_at"] = now
+    default_prefs["updated_at"] = now
+
+    # 更新用户文档
+    users_col().update_one(
+        {"username": username},
+        {"$set": {"preferences": default_prefs}},
+        upsert=False  # 用户应该已存在
+    )
+
+    return default_prefs

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import Any
 
 from celery import Celery
 
 from app.agent.graph import AgentState, run_article_workflow
+from app.services.xiaohongshu_publisher import XiaohongshuPublisher
 
 
 celery_app = Celery(
@@ -46,12 +48,36 @@ def create_article_task(self: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 @celery_app.task(name="article.publish", bind=True)
-def publish_article_task(self: Any, task_id: str, article_markdown: str) -> dict[str, str]:
-    """发布任务占位：后续接入 Playwright 执行知乎等平台自动发布。"""
-    # TODO: 在此处实现登录、草稿填写、提交发布等浏览器自动化流程。
-    return {
-        "publish_task_id": self.request.id,
-        "source_task_id": task_id,
-        "status": "published_placeholder",
-        "message": f"文章长度 {len(article_markdown)}，发布任务已进入占位流程。",
-    }
+def publish_article_task(self: Any, task_id: str, article_data: dict[str, Any]) -> dict[str, Any]:
+    """发布文章到小红书"""
+    try:
+        print(f"Starting publish task for article: {task_id}")
+
+        # 创建发布器实例
+        publisher = XiaohongshuPublisher()
+
+        # 异步执行发布
+        result = asyncio.run(publisher.publish_article(article_data))
+
+        return {
+            "publish_task_id": self.request.id,
+            "source_task_id": task_id,
+            "status": "published" if result.get("success") else "failed",
+            "success": result.get("success", False),
+            "post_url": result.get("post_url"),
+            "error": result.get("error"),
+            "draft_saved": result.get("draft_saved", False),
+            "title": article_data.get("title", ""),
+            "content_length": len(article_data.get("content", "")),
+            "timestamp": time.time(),
+        }
+    except Exception as e:
+        print(f"Publish task failed: {e}")
+        return {
+            "publish_task_id": self.request.id,
+            "source_task_id": task_id,
+            "status": "failed",
+            "success": False,
+            "error": str(e),
+            "timestamp": time.time(),
+        }

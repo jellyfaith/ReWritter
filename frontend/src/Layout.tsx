@@ -3,24 +3,23 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import {
   Bot,
   CheckSquare,
-  ChevronRight,
   ClipboardPenLine,
   FolderKanban,
   Globe,
   ListTodo,
   LogOut,
   MoonStar,
-  Plus,
   Settings,
   Sparkles,
   SunMedium,
   UserCircle2
 } from "lucide-react";
 
-import { clearAuth } from "./lib/auth";
+import { clearAuth, getUserPreferences, updateUserPreferences, getCachedPreferences, cachePreferences, clearCachedPreferences } from "./lib/auth";
+import StatusWidget from "./components/StatusWidget";
 
 interface NavItem {
-  labelKey: "create" | "tasks" | "review" | "chat" | "materials" | "settings";
+  labelKey: "create" | "tasks" | "review" | "chat" | "creation" | "materials" | "settings";
   to: string;
   icon: React.ComponentType<{ className?: string }>;
 }
@@ -37,6 +36,7 @@ const navItems: NavItem[] = [
   { labelKey: "tasks", to: "/tasks", icon: ListTodo },
   { labelKey: "review", to: "/review", icon: CheckSquare },
   { labelKey: "chat", to: "/chat", icon: Bot },
+  { labelKey: "creation", to: "/creation", icon: Sparkles },
   { labelKey: "materials", to: "/materials", icon: FolderKanban },
   { labelKey: "settings", to: "/settings", icon: Settings }
 ];
@@ -50,6 +50,7 @@ const copyMap = {
       tasks: "任务大厅",
       review: "审核台",
       chat: "聊天",
+      creation: "创作",
       materials: "素材",
       settings: "设置"
     },
@@ -77,6 +78,7 @@ const copyMap = {
       tasks: "Tasks",
       review: "Review",
       chat: "Chat",
+      creation: "Creation",
       materials: "Materials",
       settings: "Settings"
     },
@@ -101,6 +103,8 @@ const copyMap = {
 export default function Layout() {
   const [locale, setLocale] = useState<Locale>("zh");
   const [theme, setTheme] = useState<ThemeMode>("dark");
+  const [isLoading, setIsLoading] = useState(true);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -119,11 +123,72 @@ export default function Layout() {
     if (location.pathname.startsWith("/chat")) {
       return copy.nav.chat;
     }
+    if (location.pathname.startsWith("/creation")) {
+      return copy.nav.creation;
+    }
     if (location.pathname.startsWith("/materials")) {
       return copy.nav.materials;
     }
     return copy.nav.create;
-  }, [copy.nav.chat, copy.nav.create, copy.nav.materials, copy.nav.review, copy.nav.settings, copy.nav.tasks, location.pathname]);
+  }, [copy.nav.chat, copy.nav.create, copy.nav.creation, copy.nav.materials, copy.nav.review, copy.nav.settings, copy.nav.tasks, location.pathname]);
+
+  // 加载用户偏好
+  useEffect(() => {
+    async function loadUserPreferences() {
+      try {
+        setIsLoading(true);
+
+        // 首先检查本地缓存
+        const cached = getCachedPreferences();
+        if (cached) {
+          setTheme(cached.theme);
+          setLocale(cached.locale);
+          setPreferencesLoaded(true);
+        }
+
+        // 然后从服务器加载最新偏好
+        const preferences = await getUserPreferences();
+        cachePreferences(preferences);
+
+        // 使用服务器返回的偏好（可能会覆盖缓存）
+        setTheme(preferences.theme);
+        setLocale(preferences.locale);
+        setPreferencesLoaded(true);
+
+      } catch (error) {
+        console.error("加载用户偏好失败:", error);
+        // 使用默认设置
+        setPreferencesLoaded(true);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadUserPreferences();
+  }, []);
+
+  // 保存用户偏好（当主题或语言变化时）
+  useEffect(() => {
+    if (!preferencesLoaded) return;
+
+    async function savePreferences() {
+      try {
+        await updateUserPreferences({
+          theme,
+          locale,
+        });
+        // 更新缓存
+        const currentPrefs = await getUserPreferences();
+        cachePreferences(currentPrefs);
+      } catch (error) {
+        console.error("保存用户偏好失败:", error);
+      }
+    }
+
+    // 防抖保存，避免频繁请求
+    const timeoutId = setTimeout(savePreferences, 500);
+    return () => clearTimeout(timeoutId);
+  }, [theme, locale, preferencesLoaded]);
 
   useEffect(() => {
     // 将主题状态同步到 body，便于全局变量切换深浅模式。
@@ -135,8 +200,17 @@ export default function Layout() {
     };
   }, [theme]);
 
+  const handleThemeToggle = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
+
+  const handleLocaleToggle = () => {
+    setLocale((prev) => (prev === "zh" ? "en" : "zh"));
+  };
+
   const handleSignOut = () => {
     clearAuth();
+    clearCachedPreferences();
     navigate("/login", { replace: true });
   };
 
@@ -171,7 +245,7 @@ export default function Layout() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+            onClick={handleThemeToggle}
             className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-200 transition hover:bg-white/10"
           >
             {theme === "dark" ? <SunMedium className="h-4 w-4" /> : <MoonStar className="h-4 w-4" />}
@@ -180,7 +254,7 @@ export default function Layout() {
 
           <button
             type="button"
-            onClick={() => setLocale((prev) => (prev === "zh" ? "en" : "zh"))}
+            onClick={handleLocaleToggle}
             className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-200 transition hover:bg-white/10"
           >
             <Globe className="h-4 w-4" />
@@ -253,45 +327,7 @@ export default function Layout() {
 
           {!isSettingsRoute && (
             <aside className="panel hidden rounded-3xl p-4 xl:sticky xl:top-[104px] xl:flex xl:h-[calc(100vh-120px)] xl:flex-col xl:overflow-y-auto">
-          <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
-            <header className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">{copy.widgetTitle}</h3>
-              <button type="button" className="text-xs text-cyan-300 transition hover:text-cyan-200">
-                {copy.viewAll}
-              </button>
-            </header>
-
-            <div className="mt-8 flex min-h-[150px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-white/5 text-center">
-              <ListTodo className="h-8 w-8 text-slate-500" />
-              <p className="text-sm text-slate-400">{copy.emptyState}</p>
-            </div>
-
-            <footer className="mt-4 flex justify-center">
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-400"
-              >
-                <Plus className="h-4 w-4" />
-                {copy.addData}
-              </button>
-            </footer>
-          </section>
-
-          <section className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
-            <header className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">{copy.secondaryWidgetTitle}</h3>
-              <ChevronRight className="h-4 w-4 text-slate-500" />
-            </header>
-
-            <dl className="space-y-2 text-sm">
-              {copy.quickStats.map((stat) => (
-                <div key={stat.label} className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2">
-                  <dt className="text-slate-400">{stat.label}</dt>
-                  <dd className="font-medium text-[hsl(var(--foreground))]">{stat.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
+              <StatusWidget />
             </aside>
           )}
         </div>

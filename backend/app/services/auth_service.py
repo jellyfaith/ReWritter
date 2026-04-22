@@ -117,3 +117,60 @@ def authenticate(username: str, password: str, remember_me: bool, client_id: str
 def require_valid_user(username: str) -> None:
     if not auth_repository.user_exists(username):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未登录或登录状态已失效")
+
+
+def get_user_preferences(username: str) -> dict[str, Any]:
+    """获取用户偏好设置，如果不存在则创建默认值"""
+    from app.schemas import UserPreferences
+
+    # 确保用户存在
+    require_valid_user(username)
+
+    # 获取或创建偏好设置
+    preferences = auth_repository.get_user_preferences(username)
+    if preferences:
+        return preferences
+
+    # 创建默认偏好
+    default_prefs = UserPreferences().dict()
+    now = time.time()
+    default_prefs["created_at"] = now
+    default_prefs["updated_at"] = now
+
+    # 保存默认偏好
+    auth_repository.update_user_preferences(username, default_prefs)
+    return default_prefs
+
+
+def update_user_preferences(username: str, preferences_update: dict[str, Any]) -> dict[str, Any]:
+    """更新用户偏好设置"""
+    from app.schemas import UserPreferences, UserPreferencesUpdateRequest
+
+    # 确保用户存在
+    require_valid_user(username)
+
+    # 获取当前偏好
+    current_prefs = get_user_preferences(username)
+
+    # 使用Pydantic模型验证更新
+    # 首先创建完整的当前偏好对象
+    current_model = UserPreferences(**current_prefs)
+
+    # 创建更新对象并应用更新
+    update_dict = {k: v for k, v in preferences_update.items() if v is not None}
+    updated_model = current_model.copy(update=update_dict)
+
+    # 更新时间戳
+    now = time.time()
+    updated_dict = updated_model.dict()
+    updated_dict["updated_at"] = now
+
+    # 保存更新
+    success = auth_repository.update_user_preferences(username, updated_dict)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="更新用户偏好失败"
+        )
+
+    return updated_dict

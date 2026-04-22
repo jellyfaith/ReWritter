@@ -9,6 +9,8 @@ import ReviewEditor from "./pages/ReviewEditor";
 import SettingsConfig from "./pages/SettingsConfig";
 import ChatPage from "./pages/Chat";
 import MaterialsPage from "./pages/Materials";
+import CreationPage from "./pages/Creation";
+import ArticleDetail from "./pages/ArticleDetail";
 import { isAuthenticated } from "./lib/auth";
 
 function FallbackRoute() {
@@ -27,8 +29,10 @@ export default function App() {
           <Route path="/tasks" element={<TaskList />} />
           <Route path="/review" element={<ReviewEditor />} />
           <Route path="/chat" element={<ChatPage />} />
+          <Route path="/creation" element={<CreationPage />} />
           <Route path="/materials" element={<MaterialsPage />} />
           <Route path="/settings" element={<SettingsConfig />} />
+          <Route path="/articles/:id" element={<ArticleDetail />} />
         </Route>
       </Route>
 

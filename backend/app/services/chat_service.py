@@ -135,6 +135,9 @@ def build_prompt_with_rag(
     use_rag: bool,
     rag_group_id: str | None,
     rag_top_k: int,
+    rag_search_type: str = "vector",
+    rag_alpha: float = 0.6,
+    rag_candidate_pool: int = 12,
 ) -> list[dict[str, str]]:
     prompt_messages = build_prompt_from_session(session_id)
     if not use_rag:
@@ -145,6 +148,9 @@ def build_prompt_with_rag(
         query=user_input,
         group_id=rag_group_id,
         top_k=rag_top_k,
+        search_type=rag_search_type,
+        alpha=rag_alpha,
+        candidate_pool=rag_candidate_pool,
     )
     if not context_text:
         return prompt_messages
@@ -218,6 +224,9 @@ def stream_llm_events(
     use_rag: bool,
     rag_group_id: str | None,
     rag_top_k: int,
+    rag_search_type: str,
+    rag_alpha: float,
+    rag_candidate_pool: int,
 ) -> Generator[str, None, None]:
     stream_started_at = time.perf_counter()
     assistant_content_parts: list[str] = []
@@ -231,6 +240,9 @@ def stream_llm_events(
         use_rag=use_rag,
         rag_group_id=rag_group_id,
         rag_top_k=rag_top_k,
+        rag_search_type=rag_search_type,
+        rag_alpha=rag_alpha,
+        rag_candidate_pool=rag_candidate_pool,
     )
 
     try:

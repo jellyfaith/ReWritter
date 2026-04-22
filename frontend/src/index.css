@@ -505,6 +505,50 @@ body[data-theme="light"] .bg-cyan-400\/10 {
   position: relative;
 }
 
+.chat-response-text > *:first-child {
+  margin-top: 0;
+}
+
+.chat-response-text > *:last-child {
+  margin-bottom: 0;
+}
+
+.chat-response-text p,
+.chat-response-text ul,
+.chat-response-text ol,
+.chat-response-text blockquote,
+.chat-response-text pre,
+.chat-response-text table {
+  margin: 0.5rem 0;
+}
+
+.chat-response-text ul,
+.chat-response-text ol {
+  padding-left: 1.2rem;
+}
+
+.chat-response-text blockquote {
+  border-left: 3px solid hsl(191 93% 56% / 0.6);
+  padding-left: 0.8rem;
+  color: hsl(var(--foreground-secondary));
+}
+
+.chat-response-text table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.chat-response-text th,
+.chat-response-text td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.4rem 0.5rem;
+}
+
+.chat-response-text th {
+  background: hsl(var(--surface-soft) / 0.8);
+}
+
 .chat-caret {
   display: inline-block;
   width: 0.55ch;

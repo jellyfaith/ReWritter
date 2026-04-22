@@ -15,11 +15,9 @@ import {
 import { useOutletContext } from "react-router-dom";
 
 import type { LayoutOutletContext } from "../Layout";
+import MarkdownStream from "../components/MarkdownStream";
 import { listMaterialGroups, type MaterialGroup } from "../lib/materials";
 import {
-  ChatStreamEvent,
-  ChatMessage,
-  ChatSession,
   createChatSession,
   deleteChatSession,
   listChatSessions,
@@ -27,6 +25,7 @@ import {
   renameChatSession,
   streamChatMessage,
 } from "../lib/chat";
+import type { ChatMessage, ChatSession, ChatStreamEvent } from "../lib/chat";
 
 interface CopyPack {
   title: string;
@@ -39,6 +38,11 @@ interface CopyPack {
   ragGroup: string;
   ragHint: string;
   ragAllGroups: string;
+  ragSearchType: string;
+  ragSearchTypeHint: string;
+  ragAlpha: string;
+  ragCandidatePool: string;
+  ragStrategyOptions: Array<{ label: string; value: "vector" | "hybrid" | "keyword" }>;
   inputPlaceholder: string;
   send: string;
   loading: string;
@@ -73,6 +77,13 @@ interface SessionActionModalState {
 }
 
 const THINKING_COLLAPSE_KEY = "rewritter.chat.thinking_collapsed";
+const RAG_SETTINGS_KEY = "rewritter.chat.rag_settings";
+
+interface RagSettings {
+  searchType: "vector" | "hybrid" | "keyword";
+  alpha: number;
+  candidatePool: number;
+}
 
 function formatDurationMs(durationMs: number): string {
   const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
@@ -101,6 +112,30 @@ function writeThinkingCollapseMap(data: Record<string, boolean>): void {
   localStorage.setItem(THINKING_COLLAPSE_KEY, JSON.stringify(data));
 }
 
+function readRagSettings(): RagSettings {
+  try {
+    const raw = localStorage.getItem(RAG_SETTINGS_KEY);
+    if (!raw) {
+      return { searchType: "vector", alpha: 0.6, candidatePool: 12 };
+    }
+    const parsed = JSON.parse(raw) as Partial<RagSettings>;
+    const searchType = parsed.searchType === "hybrid" || parsed.searchType === "keyword" ? parsed.searchType : "vector";
+    const alphaRaw = Number(parsed.alpha);
+    const candidatePoolRaw = Number(parsed.candidatePool);
+    return {
+      searchType,
+      alpha: Number.isFinite(alphaRaw) ? Math.min(1, Math.max(0, alphaRaw)) : 0.6,
+      candidatePool: Number.isFinite(candidatePoolRaw) ? Math.min(100, Math.max(1, Math.floor(candidatePoolRaw))) : 12,
+    };
+  } catch {
+    return { searchType: "vector", alpha: 0.6, candidatePool: 12 };
+  }
+}
+
+function writeRagSettings(settings: RagSettings): void {
+  localStorage.setItem(RAG_SETTINGS_KEY, JSON.stringify(settings));
+}
+
 function formatTime(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleString("zh-CN", {
     month: "2-digit",
@@ -119,6 +154,9 @@ export default function ChatPage() {
   const [enableThinking, setEnableThinking] = useState<boolean>(false);
   const [useRag, setUseRag] = useState<boolean>(false);
   const [ragGroupId, setRagGroupId] = useState<string>("");
+  const [ragSearchType, setRagSearchType] = useState<"vector" | "hybrid" | "keyword">("vector");
+  const [ragAlpha, setRagAlpha] = useState<number>(0.6);
+  const [ragCandidatePool, setRagCandidatePool] = useState<number>(12);
   const [materialGroups, setMaterialGroups] = useState<MaterialGroup[]>([]);
   const [input, setInput] = useState<string>("");
   const [loadingSessions, setLoadingSessions] = useState<boolean>(true);
@@ -146,6 +184,15 @@ export default function ChatPage() {
             ragGroup: "素材组",
             ragHint: "启用后会先从素材组检索，再把命中片段注入对话上下文。",
             ragAllGroups: "全部素材组",
+            ragSearchType: "检索策略",
+            ragSearchTypeHint: "vector=仅向量；hybrid=向量+关键词；keyword=仅关键词。",
+            ragAlpha: "混合权重(向量)",
+            ragCandidatePool: "候选池",
+            ragStrategyOptions: [
+              { label: "仅向量 (Vector)", value: "vector" },
+              { label: "混合检索 (Hybrid)", value: "hybrid" },
+              { label: "仅关键词 (Keyword)", value: "keyword" },
+            ],
             inputPlaceholder: "输入你的问题，Enter 发送，Shift + Enter 换行",
             send: "发送",
             loading: "AI 正在生成回复...",
@@ -185,6 +232,15 @@ export default function ChatPage() {
             ragGroup: "Material Group",
             ragHint: "When enabled, chat retrieves from materials first and injects context.",
             ragAllGroups: "All Groups",
+            ragSearchType: "Search Strategy",
+            ragSearchTypeHint: "vector=vector only; hybrid=vector+keyword; keyword=keyword only.",
+            ragAlpha: "Hybrid Weight (Vector)",
+            ragCandidatePool: "Candidate Pool",
+            ragStrategyOptions: [
+              { label: "Vector Only", value: "vector" },
+              { label: "Hybrid", value: "hybrid" },
+              { label: "Keyword Only", value: "keyword" },
+            ],
             inputPlaceholder: "Type your message, Enter to send, Shift + Enter for newline",
             send: "Send",
             loading: "AI is generating...",
@@ -218,11 +274,23 @@ export default function ChatPage() {
 
   useEffect(() => {
     setThinkingCollapsed(readThinkingCollapseMap());
+    const ragSettings = readRagSettings();
+    setRagSearchType(ragSettings.searchType);
+    setRagAlpha(ragSettings.alpha);
+    setRagCandidatePool(ragSettings.candidatePool);
   }, []);
 
   useEffect(() => {
     writeThinkingCollapseMap(thinkingCollapsed);
   }, [thinkingCollapsed]);
+
+  useEffect(() => {
+    writeRagSettings({
+      searchType: ragSearchType,
+      alpha: ragAlpha,
+      candidatePool: ragCandidatePool,
+    });
+  }, [ragSearchType, ragAlpha, ragCandidatePool]);
 
   useEffect(() => {
     const loadMaterialGroups = async () => {
@@ -453,6 +521,9 @@ export default function ChatPage() {
           useRag,
           ragGroupId: ragGroupId || undefined,
           ragTopK: 6,
+          ragSearchType,
+          ragAlpha,
+          ragCandidatePool,
         },
         (eventPayload: ChatStreamEvent) => {
           if (eventPayload.type === "thinking_delta") {
@@ -580,8 +651,8 @@ export default function ChatPage() {
             <p className="mt-1 text-xs text-slate-400">{activeSession?.title ?? copy.emptyTitle}</p>
           </div>
 
-          <div className="grid gap-2 md:grid-cols-[1fr_auto_auto] md:items-end">
-            <label className="grid gap-1 text-xs text-slate-300">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="grid min-w-[220px] flex-1 gap-1 text-xs text-slate-300">
               {copy.model}
               <select
                 value={model}
@@ -596,7 +667,7 @@ export default function ChatPage() {
               </select>
             </label>
 
-            <label className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200">
+            <label className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200">
               <input
                 type="checkbox"
                 checked={enableThinking}
@@ -607,7 +678,7 @@ export default function ChatPage() {
               <span>{copy.thinking}</span>
             </label>
 
-            <label className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200">
+            <label className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200">
               <input
                 type="checkbox"
                 checked={useRag}
@@ -619,9 +690,13 @@ export default function ChatPage() {
             </label>
           </div>
 
-          {useRag ? (
-            <div className="grid gap-2 md:grid-cols-[220px_1fr] md:items-end">
-              <label className="grid gap-1 text-xs text-slate-300">
+          <div
+            className={[
+              "flex flex-wrap items-end gap-2 overflow-hidden transition-all duration-200",
+              useRag ? "max-h-40 opacity-100" : "max-h-0 opacity-0 pointer-events-none",
+            ].join(" ")}
+          >
+            <label className="grid min-w-[220px] flex-1 gap-1 text-xs text-slate-300">
                 {copy.ragGroup}
                 <select
                   value={ragGroupId}
@@ -636,11 +711,57 @@ export default function ChatPage() {
                   ))}
                 </select>
               </label>
-              <p className="text-[11px] text-slate-400">{copy.ragHint}</p>
-            </div>
-          ) : null}
+            <label className="grid min-w-[220px] flex-1 gap-1 text-xs text-slate-300">
+              {copy.ragSearchType}
+              <select
+                value={ragSearchType}
+                onChange={(event) => setRagSearchType(event.target.value as "vector" | "hybrid" | "keyword")}
+                className="rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-sm text-[hsl(var(--foreground))] outline-none ring-[hsl(var(--ring))] transition focus:ring-2"
+              >
+                {copy.ragStrategyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid min-w-[180px] gap-1 text-xs text-slate-300">
+              {copy.ragCandidatePool}
+              <input
+                type="number"
+                value={ragCandidatePool}
+                min={1}
+                max={100}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) {
+                    return;
+                  }
+                  setRagCandidatePool(Math.max(1, Math.min(100, Math.floor(value))));
+                }}
+                className="rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-sm text-[hsl(var(--foreground))] outline-none ring-[hsl(var(--ring))] transition focus:ring-2"
+              />
+            </label>
+            {ragSearchType === "hybrid" ? (
+              <label className="grid min-w-[220px] flex-1 gap-1 text-xs text-slate-300">
+                {copy.ragAlpha}
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={ragAlpha}
+                  onChange={(event) => setRagAlpha(Number(event.target.value))}
+                  className="accent-cyan-400"
+                />
+                <span className="text-[11px] text-slate-400">{ragAlpha.toFixed(2)}</span>
+              </label>
+            ) : null}
+            <p className="min-w-[220px] flex-[2] text-[11px] text-slate-400">{copy.ragHint}</p>
+            <p className="min-w-[220px] flex-[2] text-[11px] text-slate-400">{copy.ragSearchTypeHint}</p>
+          </div>
 
-          <p className="md:col-span-2 text-[11px] text-slate-400">{copy.thinkingHint}</p>
+          <p className="text-[11px] text-slate-400">{copy.thinkingHint}</p>
         </header>
 
         <div ref={chatScrollRef} className="chat-log mt-3 rounded-2xl p-3 md:p-4">
@@ -675,10 +796,17 @@ export default function ChatPage() {
                   </span>
                   <span>{formatTime(message.created_at)}</span>
                 </header>
-                <p className="chat-response-text whitespace-pre-wrap text-sm leading-7 text-[hsl(var(--foreground))]">
-                  {message.content}
-                  {streamingAssistantId === message.message_id ? <span className="chat-caret" /> : null}
-                </p>
+                {message.role === "assistant" ? (
+                  <MarkdownStream
+                    content={message.content}
+                    streaming={streamingAssistantId === message.message_id}
+                    className="chat-response-text text-sm leading-7 text-[hsl(var(--foreground))]"
+                  />
+                ) : (
+                  <p className="chat-response-text whitespace-pre-wrap text-sm leading-7 text-[hsl(var(--foreground))]">
+                    {message.content}
+                  </p>
+                )}
 
                 {message.role === "assistant" && message.thinking_content ? (
                   <div className="chat-thinking-panel mt-3 rounded-xl border border-white/10 bg-black/20 p-3">

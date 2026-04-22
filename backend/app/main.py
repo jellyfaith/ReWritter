@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, chat, health, materials, tasks, vendors
-from app.services import auth_service, chat_service, material_service, vendor_service
+from app.routers import auth, chat, health, materials, tasks, vendors, writing_flow, amap, articles, publish, stats
+from app.services import auth_service, chat_service, material_service, vendor_service, writing_flow_service, amap_service, article_service, stats_service
 
 app = FastAPI(
     title="ReWritter-Agent API",
@@ -19,6 +19,9 @@ async def setup_storage() -> None:
     vendor_service.ensure_storage()
     chat_service.ensure_storage()
     material_service.ensure_storage()
+    writing_flow_service.ensure_storage()
+    article_service.ensure_storage()
+    stats_service.ensure_storage()
 
 
 app.add_middleware(
@@ -36,3 +39,8 @@ app.include_router(tasks.router)
 app.include_router(vendors.router)
 app.include_router(chat.router)
 app.include_router(materials.router)
+app.include_router(writing_flow.router)
+app.include_router(amap.router)
+app.include_router(articles.router)
+app.include_router(publish.router)
+app.include_router(stats.router)

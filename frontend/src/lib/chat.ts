@@ -26,11 +26,32 @@ interface SendMessageResponse {
   assistant_message: ChatMessage;
 }
 
+export interface ChatStreamThinkingDeltaEvent {
+  type: "thinking_delta";
+  delta: string;
+}
+
+export interface ChatStreamContentDeltaEvent {
+  type: "content_delta";
+  delta: string;
+}
+
+export interface ChatStreamDoneEvent {
+  type: "done";
+  session: ChatSession;
+  assistant_message: ChatMessage;
+}
+
+export interface ChatStreamErrorEvent {
+  type: "error";
+  message: string;
+}
+
 export type ChatStreamEvent =
-  | { type: "thinking_delta"; delta: string }
-  | { type: "content_delta"; delta: string }
-  | { type: "done"; session: ChatSession; assistant_message: ChatMessage }
-  | { type: "error"; message: string };
+  | ChatStreamThinkingDeltaEvent
+  | ChatStreamContentDeltaEvent
+  | ChatStreamDoneEvent
+  | ChatStreamErrorEvent;
 
 async function parseError(response: Response, fallback: string): Promise<Error> {
   try {
@@ -121,6 +142,9 @@ export async function sendChatMessage(params: {
   useRag?: boolean;
   ragGroupId?: string;
   ragTopK?: number;
+  ragSearchType?: "vector" | "hybrid" | "keyword";
+  ragAlpha?: number;
+  ragCandidatePool?: number;
 }): Promise<SendMessageResponse> {
   const response = await fetch(`${API_BASE}/api/chat/sessions/${params.sessionId}/messages`, {
     method: "POST",
@@ -134,6 +158,9 @@ export async function sendChatMessage(params: {
       use_rag: params.useRag ?? false,
       rag_group_id: params.ragGroupId,
       rag_top_k: params.ragTopK ?? 6,
+      rag_search_type: params.ragSearchType ?? "vector",
+      rag_alpha: params.ragAlpha ?? 0.6,
+      rag_candidate_pool: params.ragCandidatePool ?? 12,
     }),
   });
 
@@ -153,6 +180,9 @@ export async function streamChatMessage(
     useRag?: boolean;
     ragGroupId?: string;
     ragTopK?: number;
+    ragSearchType?: "vector" | "hybrid" | "keyword";
+    ragAlpha?: number;
+    ragCandidatePool?: number;
   },
   onEvent: (event: ChatStreamEvent) => void,
 ): Promise<void> {
@@ -169,6 +199,9 @@ export async function streamChatMessage(
       use_rag: params.useRag ?? false,
       rag_group_id: params.ragGroupId,
       rag_top_k: params.ragTopK ?? 6,
+      rag_search_type: params.ragSearchType ?? "vector",
+      rag_alpha: params.ragAlpha ?? 0.6,
+      rag_candidate_pool: params.ragCandidatePool ?? 12,
     }),
   });
 

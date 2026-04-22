@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 import time
 from typing import Any
@@ -10,10 +11,15 @@ from openai import OpenAI
 
 from app.core.settings import (
     EMBEDDING_MODEL,
+    ENABLE_HYBRID_SEARCH,
+    RAG_CANDIDATE_POOL,
+    RAG_HYBRID_ALPHA,
 )
 from app.repositories import material_repository, vector_repository
 from app.schemas import MaterialFileItem, MaterialGroupItem, MaterialRetrieveItem
 from app.services import vendor_service
+
+logger = logging.getLogger(__name__)
 
 
 def ensure_storage() -> None:
@@ -119,7 +125,53 @@ def list_group_files(group_id: str, username: str) -> list[dict[str, Any]]:
     return material_repository.list_files(group_id, username)
 
 
-def retrieve_material_chunks(username: str, query: str, group_id: str | None, top_k: int) -> list[MaterialRetrieveItem]:
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def _normalize_score_items(items: list[dict[str, Any]]) -> dict[str, float]:
+    if not items:
+        return {}
+    score_map: dict[str, float] = {}
+    raw_scores: list[float] = []
+    for item in items:
+        chunk_id = str(item.get("chunk_id", ""))
+        if not chunk_id:
+            continue
+        score = float(item.get("score", 0.0))
+        score_map[chunk_id] = score
+        raw_scores.append(score)
+
+    if not score_map:
+        return {}
+    min_score = min(raw_scores)
+    max_score = max(raw_scores)
+    if max_score - min_score < 1e-8:
+        return {key: 1.0 for key in score_map}
+    return {key: (value - min_score) / (max_score - min_score) for key, value in score_map.items()}
+
+
+def _dedupe_by_chunk(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: dict[str, dict[str, Any]] = {}
+    for item in items:
+        chunk_id = str(item.get("chunk_id", ""))
+        if not chunk_id:
+            continue
+        existing = deduped.get(chunk_id)
+        if existing is None or float(item.get("score", 0.0)) > float(existing.get("score", 0.0)):
+            deduped[chunk_id] = item
+    return list(deduped.values())
+
+
+def retrieve_material_chunks(
+    username: str,
+    query: str,
+    group_id: str | None,
+    top_k: int,
+    search_type: str = "vector",
+    alpha: float | None = None,
+    candidate_pool: int | None = None,
+) -> list[MaterialRetrieveItem]:
     normalized_query = query.strip()
     if not normalized_query:
         return []
@@ -136,14 +188,96 @@ def retrieve_material_chunks(username: str, query: str, group_id: str | None, to
     if not search_group_ids:
         return []
 
+    search_started_at = time.perf_counter()
     target_dim = vector_repository.get_collection_vector_dim()
     query_vector, _ = _embed_query(normalized_query, username, target_dim)
-    docs = vector_repository.search_chunks(query_vector=query_vector, top_k=top_k, group_ids=search_group_ids)
-    return [MaterialRetrieveItem(**item) for item in docs]
+
+    resolved_search_type = search_type if search_type in {"vector", "hybrid", "keyword"} else "vector"
+    if resolved_search_type == "hybrid" and not ENABLE_HYBRID_SEARCH:
+        resolved_search_type = "vector"
+
+    resolved_alpha = _clamp(alpha if alpha is not None else RAG_HYBRID_ALPHA, 0.0, 1.0)
+    resolved_pool = max(top_k, candidate_pool if candidate_pool is not None else RAG_CANDIDATE_POOL)
+
+    vector_docs: list[dict[str, Any]] = []
+    keyword_docs: list[dict[str, Any]] = []
+
+    if resolved_search_type in {"vector", "hybrid"}:
+        vector_docs = vector_repository.search_chunks(
+            query_vector=query_vector,
+            top_k=resolved_pool,
+            group_ids=search_group_ids,
+        )
+
+    if resolved_search_type in {"keyword", "hybrid"}:
+        keyword_docs = material_repository.search_chunks_by_keywords(
+            username=username,
+            query=normalized_query,
+            group_ids=search_group_ids,
+            limit=resolved_pool,
+        )
+
+    if resolved_search_type == "vector":
+        selected = _dedupe_by_chunk(vector_docs)[:top_k]
+    elif resolved_search_type == "keyword":
+        selected = _dedupe_by_chunk(keyword_docs)[:top_k]
+    else:
+        vector_norm = _normalize_score_items(vector_docs)
+        keyword_norm = _normalize_score_items(keyword_docs)
+
+        merged: dict[str, dict[str, Any]] = {}
+        for item in vector_docs:
+            chunk_id = str(item.get("chunk_id", ""))
+            if not chunk_id:
+                continue
+            merged[chunk_id] = dict(item)
+        for item in keyword_docs:
+            chunk_id = str(item.get("chunk_id", ""))
+            if not chunk_id:
+                continue
+            if chunk_id not in merged:
+                merged[chunk_id] = dict(item)
+
+        scored: list[dict[str, Any]] = []
+        for chunk_id, item in merged.items():
+            score = (resolved_alpha * vector_norm.get(chunk_id, 0.0)) + ((1.0 - resolved_alpha) * keyword_norm.get(chunk_id, 0.0))
+            item["score"] = score
+            scored.append(item)
+
+        scored.sort(key=lambda doc: float(doc.get("score", 0.0)), reverse=True)
+        selected = _dedupe_by_chunk(scored)[:top_k]
+
+    elapsed_ms = int((time.perf_counter() - search_started_at) * 1000)
+    logger.info(
+        "rag_retrieve strategy=%s groups=%d vector_candidates=%d keyword_candidates=%d selected=%d elapsed_ms=%d",
+        resolved_search_type,
+        len(search_group_ids),
+        len(vector_docs),
+        len(keyword_docs),
+        len(selected),
+        elapsed_ms,
+    )
+    return [MaterialRetrieveItem(**item) for item in selected]
 
 
-def build_rag_context(username: str, query: str, group_id: str | None, top_k: int) -> tuple[str, list[MaterialRetrieveItem]]:
-    items = retrieve_material_chunks(username, query, group_id, top_k)
+def build_rag_context(
+    username: str,
+    query: str,
+    group_id: str | None,
+    top_k: int,
+    search_type: str = "vector",
+    alpha: float | None = None,
+    candidate_pool: int | None = None,
+) -> tuple[str, list[MaterialRetrieveItem]]:
+    items = retrieve_material_chunks(
+        username=username,
+        query=query,
+        group_id=group_id,
+        top_k=top_k,
+        search_type=search_type,
+        alpha=alpha,
+        candidate_pool=candidate_pool,
+    )
     if not items:
         return "", []
 
@@ -221,6 +355,22 @@ def upload_material(username: str, group_name: str, topic: str, file_name: str, 
         contents=chunks,
         chunk_indexes=chunk_indexes,
     )
+
+    chunk_docs = [
+        {
+            "chunk_id": chunk_ids[idx],
+            "group_id": group_ids[idx],
+            "group_name": group_names[idx],
+            "file_id": file_ids[idx],
+            "file_name": file_names[idx],
+            "chunk_index": chunk_indexes[idx],
+            "content": chunks[idx],
+            "username": username,
+            "created_at": now,
+        }
+        for idx in range(len(chunks))
+    ]
+    material_repository.create_chunks(chunk_docs)
 
     updated_group = material_repository.touch_group(
         group_id=str(group_doc.get("group_id", "")),

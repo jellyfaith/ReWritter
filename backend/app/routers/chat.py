@@ -94,6 +94,9 @@ async def send_chat_message(
         use_rag=payload.use_rag,
         rag_group_id=payload.rag_group_id,
         rag_top_k=payload.rag_top_k,
+        rag_search_type=payload.rag_search_type,
+        rag_alpha=payload.rag_alpha,
+        rag_candidate_pool=payload.rag_candidate_pool,
     )
     assistant_content, resolved_model = chat_service.run_llm_chat(
         prompt_messages,
@@ -142,6 +145,9 @@ async def stream_chat_message(
             use_rag=payload.use_rag,
             rag_group_id=payload.rag_group_id,
             rag_top_k=payload.rag_top_k,
+            rag_search_type=payload.rag_search_type,
+            rag_alpha=payload.rag_alpha,
+            rag_candidate_pool=payload.rag_candidate_pool,
         ),
         media_type="text/event-stream",
         headers={
